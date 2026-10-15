@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: regulus-api
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+  sql:
+    init:
+      mode: never
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+server:
+  port: ${PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+app:
+  security:
+    username: ${API_USERNAME}
+    password: ${API_PASSWORD}

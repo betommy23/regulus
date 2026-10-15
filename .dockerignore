@@ -1,0 +1,11 @@
+.git
+target
+.idea
+.vscode
+.env*
+*.log
+
+build
+.gradle
+current_deployment
+docs/original

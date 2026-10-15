@@ -1,0 +1,16 @@
+# Copy to <deployment>/config/application.yml, restrict access to the service account.
+# Environment values are intentionally not embedded in the JAR.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+app:
+  security:
+    username: ${API_USERNAME}
+    password: ${API_PASSWORD}
+server:
+  port: 8089
+logging:
+  file:
+    name: C:/regulus/logs/regulus-api.log

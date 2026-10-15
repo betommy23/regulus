@@ -1,0 +1,78 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '2.7.18'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'jacoco'
+}
+
+group = 'com.regulus'
+version = '1.0.0-SNAPSHOT'
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+if (JavaVersion.current() != JavaVersion.VERSION_1_8) {
+    throw new GradleException('Build and test with JDK 8. Set JAVA_HOME to your Java 8 JDK.')
+}
+
+repositories { mavenCentral() }
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation files('libs/regulus-bo18-0.0.0-dev.jar')
+    // jdeps identifies Commons IO references in the deployed vendor library.
+    implementation 'commons-io:commons-io:2.16.1'
+    runtimeOnly 'com.microsoft.sqlserver:mssql-jdbc:12.6.4.jre8'
+    runtimeOnly 'com.h2database:h2'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+}
+
+tasks.register('verifyVendorJar') {
+    inputs.file('libs/regulus-bo18-0.0.0-dev.jar')
+    doLast {
+        def artifact = file('libs/regulus-bo18-0.0.0-dev.jar')
+        if (!artifact.exists()) throw new GradleException('Missing vendor JAR; see libs/README.md')
+        def hash = java.security.MessageDigest.getInstance('SHA-256').digest(artifact.bytes).encodeHex().toString()
+        if (hash != '3941326c55c4415341fd929083a35bdb00ec4aefc14e313906b027b62ef5dd0e') {
+            throw new GradleException('Vendor JAR differs from the inspected deployment. Review the upgrade and checksum.')
+        }
+    }
+}
+compileJava.dependsOn verifyVendorJar
+
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+processResources {
+    from('docs') { include 'openapi.yaml'; into 'static' }
+}
+bootJar { archiveFileName = 'regulus-api.jar' }
+jar { enabled = false }
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+jacoco { toolVersion = '0.8.12' }
+jacocoTestReport {
+    dependsOn test
+    reports { xml.required = true; html.required = true; csv.required = true }
+}
+jacocoTestCoverageVerification {
+    dependsOn test
+    violationRules {
+        rule { limit { counter = 'LINE'; value = 'COVEREDRATIO'; minimum = 0.51 } }
+    }
+}
+check.dependsOn jacocoTestCoverageVerification
+
+// Resolve all resolvable dependency configurations into the normal Gradle cache.
+tasks.register('downloadDependencies') {
+    doLast { configurations.findAll { it.canBeResolved }.each { it.resolve() } }
+}
+
+tasks.register('generateVendorSchemas', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.regulus.api.tools.VendorSchemaGenerator'
+}

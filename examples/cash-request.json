@@ -1,0 +1,21 @@
+{
+  "account": {
+    "firmId": 1,
+    "accountId": "ABC123",
+    "correspondent": "",
+    "branch": "",
+    "rep": ""
+  },
+  "accountType": 1,
+  "processDate": "2026-10-08",
+  "tradeDate": "2026-10-08",
+  "settleDate": "2026-10-08",
+  "asofDate": "2026-10-08",
+  "currency": "USD",
+  "amount": 100.0,
+  "amountCurr": 100.0,
+  "entryCode": "DEPO",
+  "subSource": "DEPOSIT",
+  "desc1": "test",
+  "controlId": "CASH001"
+}

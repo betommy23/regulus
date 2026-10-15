@@ -1,0 +1,106 @@
+name: Regulus CI/CD
+
+on:
+  pull_request:
+    branches: [dev, qa, main]
+  push:
+    branches: [dev, qa, main]
+
+permissions:
+  contents: read
+
+jobs:
+  deployment-script-tests:
+    name: Deployment script tests
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Test deployment and rollback without a real service
+        shell: powershell
+        run: ./deployment/windows/deploy.Tests.ps1
+
+  build:
+    name: Java 8 build and tests
+    outputs:
+      artifact-id: ${{ steps.release.outputs.artifact-id }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: '8'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6
+      - name: Build, test and enforce coverage
+        run: bash ./gradlew --no-daemon clean build
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: reports-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            build/reports/tests/
+            build/reports/jacoco/
+            build/test-results/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Assemble deployment bundle
+        if: github.event_name == 'push'
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          mkdir -p build/deployment
+          cp build/libs/regulus-api.jar build/deployment/
+          cp deployment/windows/deploy.ps1 deployment/windows/run-api.cmd build/deployment/
+          cp deployment/windows/application.yml.example build/deployment/
+          printf '%s\n' "$COMMIT_SHA" > build/deployment/commit.txt
+          cd build/deployment
+          sha256sum regulus-api.jar > regulus-api.jar.sha256
+      - name: Upload validated deployment bundle
+        id: release
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: regulus-${{ github.sha }}-${{ github.run_attempt }}
+          path: build/deployment/
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy-dev:
+    name: Deploy dev
+    needs: [build, deployment-script-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    uses: ./.github/workflows/deploy-windows.yml
+    with:
+      environment: dev
+      artifact-id: ${{ needs.build.outputs.artifact-id }}
+    secrets: inherit
+
+  deploy-qa:
+    name: Deploy QA
+    needs: [build, deployment-script-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/qa'
+    uses: ./.github/workflows/deploy-windows.yml
+    with:
+      environment: qa
+      artifact-id: ${{ needs.build.outputs.artifact-id }}
+    secrets: inherit
+
+  deploy-prod:
+    name: Deploy production
+    needs: [build, deployment-script-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/deploy-windows.yml
+    with:
+      environment: prod
+      artifact-id: ${{ needs.build.outputs.artifact-id }}
+    secrets: inherit

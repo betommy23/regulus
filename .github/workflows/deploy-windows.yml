@@ -1,0 +1,61 @@
+name: Deploy Windows service
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      artifact-id:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Windows deployment
+    environment: ${{ inputs.environment }}
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+      - ${{ format('regulus-{0}', inputs.environment) }}
+    timeout-minutes: 30
+    concurrency:
+      group: regulus-deployment-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      # No checkout/build executes on the deployment host. Only the validated
+      # artifact from this same workflow run is downloaded.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ inputs.artifact-id }}
+          path: ${{ runner.temp }}/regulus-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify origin and deploy
+        shell: powershell
+        env:
+          ARTIFACT_DIRECTORY: ${{ runner.temp }}/regulus-${{ github.run_id }}-${{ github.run_attempt }}
+          DEPLOYMENT_ROOT: ${{ vars.DEPLOYMENT_ROOT }}
+          SERVICE_NAME: ${{ vars.SERVICE_NAME }}
+          HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL }}
+          HEALTHCHECK_USERNAME: ${{ secrets.API_USERNAME }}
+          HEALTHCHECK_PASSWORD: ${{ secrets.API_PASSWORD }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          RELEASE_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @('DEPLOYMENT_ROOT', 'SERVICE_NAME', 'HEALTHCHECK_URL')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Missing GitHub environment variable: $name"
+            }
+          }
+          $commit = (Get-Content (Join-Path $env:ARTIFACT_DIRECTORY 'commit.txt') -Raw).Trim()
+          if ($commit -ne $env:EXPECTED_COMMIT) { throw 'Artifact commit mismatch.' }
+          & (Join-Path $env:ARTIFACT_DIRECTORY 'deploy.ps1') `
+            -ArtifactDirectory $env:ARTIFACT_DIRECTORY `
+            -DeploymentRoot $env:DEPLOYMENT_ROOT `
+            -ServiceName $env:SERVICE_NAME `
+            -HealthcheckUrl $env:HEALTHCHECK_URL `
+            -ReleaseId $env:RELEASE_ID

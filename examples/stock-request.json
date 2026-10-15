@@ -1,0 +1,25 @@
+{
+  "account": {
+    "firmId": 1,
+    "accountId": "ABC123",
+    "correspondent": "",
+    "branch": "",
+    "rep": ""
+  },
+  "accountType": 1,
+  "processDate": "2026-10-08",
+  "tradeDate": "2026-10-08",
+  "settleDate": "2026-10-09",
+  "currency": "USD",
+  "secType": "EQUITY",
+  "secId": "NVDA",
+  "qty": 2.0,
+  "qtyCurr": 2.0,
+  "qtyOrig": 2.0,
+  "price": 10.0,
+  "amount": 20.0,
+  "amountCurr": 20.0,
+  "amountOrig": 20.0,
+  "controlId": "STOCK001",
+  "location": "99"
+}

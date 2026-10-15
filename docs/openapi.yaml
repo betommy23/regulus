@@ -1,0 +1,2083 @@
+openapi: 3.0.3
+info:
+  title: Regulus API
+  version: 1.0.0
+  description: Account and financial API using Spring Boot 2.7.18 on Java 8. All operations
+    require HTTP Basic authentication; use HTTPS outside local development. Financial
+    field schemas were recovered from the exact vendor library embedded in the supplied
+    deployed app.jar. Business code meanings and production SQL Server behavior require
+    owner acceptance testing. Financial persistence uses parameterized Spring JDBC
+    transactions; no automatic retry or idempotency guarantee is provided.
+servers:
+- url: http://localhost:8080
+  description: Local executable JAR / Docker
+- url: https://your-server
+  description: Windows executable JAR behind TLS; replace host
+security:
+- basicAuth: []
+tags:
+- name: Accounts
+- name: Finance
+paths:
+  /api/database:
+    get:
+      operationId: getDatabaseName
+      tags:
+      - Accounts
+      summary: Get the connected database name
+      responses:
+        '200':
+          description: SQL Server database name; regulus-local for H2
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: regulus-local
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '406':
+          description: Requested response media type unavailable
+  /api/accounts:
+    get:
+      operationId: listAccounts
+      tags:
+      - Accounts
+      summary: List all accounts or accounts for a firm
+      parameters:
+      - name: firmId
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+      responses:
+        '200':
+          description: Sorted by accountId, or firmId then accountId if unfiltered;
+            empty list when none
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccountSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '406':
+          description: Requested response media type unavailable
+  /api/account/edit:
+    post:
+      operationId: createAccount
+      tags:
+      - Accounts
+      summary: Create an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/Account'
+              - type: object
+                required:
+                - firmId
+                - accountId
+            example:
+              firmId: 1
+              accountId: ABC123
+              accountName: Example Account
+              marginable: false
+      responses:
+        '201':
+          $ref: '#/components/responses/AccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '406':
+          description: Requested response media type unavailable
+    patch:
+      operationId: updateAccount
+      tags:
+      - Accounts
+      summary: Update non-null fields of an existing account
+      description: 'Omitted and null fields are unchanged; false booleans are applied.
+
+        firmId and accountId in the body are ignored; identity comes from query parameters.
+
+        An empty object is a successful no-op for an existing account.
+
+        '
+      parameters:
+      - $ref: '#/components/parameters/FirmId'
+      - $ref: '#/components/parameters/AccountId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountPatch'
+            example:
+              accountName: Updated Account
+              marginable: false
+      responses:
+        '200':
+          $ref: '#/components/responses/AccountResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '406':
+          description: Requested response media type unavailable
+    delete:
+      operationId: deleteAccount
+      tags:
+      - Accounts
+      summary: Delete an account master record
+      description: Does not explicitly delete account books; database constraints
+        may reject deletion.
+      parameters:
+      - $ref: '#/components/parameters/FirmId'
+      - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - message
+                - firmId
+                - accountId
+                properties:
+                  message:
+                    type: string
+                    example: Account deleted successfully
+                  firmId:
+                    type: integer
+                    format: int32
+                  accountId:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '406':
+          description: Requested response media type unavailable
+  /api/cash:
+    post:
+      operationId: processCash
+      tags:
+      - Finance
+      summary: Process cash using the deployed vendor engine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Vendor_cash'
+            example:
+              account:
+                firmId: 1
+                accountId: ABC123
+                correspondent: ''
+                branch: ''
+                rep: ''
+              accountType: 1
+              processDate: '2026-10-08'
+              tradeDate: '2026-10-08'
+              settleDate: '2026-10-08'
+              asofDate: '2026-10-08'
+              currency: USD
+              amount: 100.0
+              amountCurr: 100.0
+              entryCode: DEPO
+              subSource: DEPOSIT
+              desc1: test
+              controlId: CASH001
+      responses:
+        '200':
+          $ref: '#/components/responses/LegacyAsset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '406':
+          description: Requested response media type unavailable
+      description: Loads the latest book, applies forward process-date rollover, processes
+        the transaction and persists vendor book JSON atomically. An earlier processDate
+        returns 409. A new book is initialized at the supplied date. Financial POSTs
+        are not guaranteed idempotent; do not retry blindly.
+  /api/trade:
+    post:
+      operationId: processTrade
+      tags:
+      - Finance
+      summary: Process trade using the deployed vendor engine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Vendor_trade'
+            example:
+              account:
+                firmId: 1
+                accountId: ABC123
+                correspondent: ''
+                branch: ''
+                rep: ''
+              accountType: 1
+              processDate: '2026-10-08'
+              tradeDate: '2026-10-08'
+              settleDate: '2026-10-09'
+              currency: USD
+              secType: EQUITY
+              secId: NVDA
+              qty: 2.0
+              qtyCurr: 2.0
+              qtyOrig: 2.0
+              price: 10.0
+              amount: 20.0
+              amountCurr: 20.0
+              amountOrig: 20.0
+              controlId: TRADE001
+      responses:
+        '200':
+          $ref: '#/components/responses/LegacyAsset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '406':
+          description: Requested response media type unavailable
+      description: Loads the latest book, applies forward process-date rollover, processes
+        the transaction and persists vendor book JSON atomically. An earlier processDate
+        returns 409. A new book is initialized at the supplied date. Financial POSTs
+        are not guaranteed idempotent; do not retry blindly.
+  /api/stock:
+    post:
+      operationId: processStock
+      tags:
+      - Finance
+      summary: Process stock using the deployed vendor engine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Vendor_stock'
+            example:
+              account:
+                firmId: 1
+                accountId: ABC123
+                correspondent: ''
+                branch: ''
+                rep: ''
+              accountType: 1
+              processDate: '2026-10-08'
+              tradeDate: '2026-10-08'
+              settleDate: '2026-10-09'
+              currency: USD
+              secType: EQUITY
+              secId: NVDA
+              qty: 2.0
+              qtyCurr: 2.0
+              qtyOrig: 2.0
+              price: 10.0
+              amount: 20.0
+              amountCurr: 20.0
+              amountOrig: 20.0
+              controlId: STOCK001
+              location: '99'
+      responses:
+        '200':
+          $ref: '#/components/responses/LegacyAsset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '406':
+          description: Requested response media type unavailable
+      description: Loads the latest book, applies forward process-date rollover, processes
+        the transaction and persists vendor book JSON atomically. An earlier processDate
+        returns 409. A new book is initialized at the supplied date. Financial POSTs
+        are not guaranteed idempotent; do not retry blindly.
+  /api/asset:
+    get:
+      operationId: getLegacyAsset
+      tags:
+      - Finance
+      summary: Load the latest or dated vendor account book
+      parameters:
+      - $ref: '#/components/parameters/FirmId'
+      - $ref: '#/components/parameters/AccountId'
+      - name: processDate
+        in: query
+        required: false
+        description: ISO calendar date; omitted means latest
+        schema:
+          type: string
+          format: date
+          example: '2026-10-08'
+      responses:
+        '200':
+          $ref: '#/components/responses/LegacyAsset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '406':
+          description: Requested response media type unavailable
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: 'Authorization header is Basic base64(username:password). No token
+        endpoint or cookies.
+
+        Local profile uses developer / local-only-password. Other profiles use API_USERNAME
+
+        and API_PASSWORD. All authenticated application users have the API role.
+
+        Clients must not rely on browser session authentication. Use HTTPS on the
+        server.
+
+        '
+  parameters:
+    FirmId:
+      name: firmId
+      in: query
+      required: true
+      schema:
+        type: integer
+        format: int32
+    AccountId:
+      name: accountId
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        pattern: \S
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: string
+    AccountPatch:
+      type: object
+      properties:
+        correspondent:
+          type: string
+          nullable: true
+        branch:
+          type: string
+          nullable: true
+        rep:
+          type: string
+          nullable: true
+        accountName:
+          type: string
+          nullable: true
+        accountCat:
+          type: string
+          nullable: true
+        marginable:
+          type: boolean
+          nullable: true
+        aggregate:
+          type: boolean
+          nullable: true
+        taxlotMethod:
+          type: string
+          nullable: true
+    Account:
+      allOf:
+      - $ref: '#/components/schemas/AccountPatch'
+      - type: object
+        properties:
+          firmId:
+            type: integer
+            format: int32
+          accountId:
+            type: string
+            minLength: 1
+            pattern: \S
+    AccountSummary:
+      type: object
+      properties:
+        accountId:
+          type: string
+        accountName:
+          type: string
+          nullable: true
+    Vendor_cash:
+      type: object
+      properties:
+        subSource:
+          type: string
+          nullable: true
+        recType:
+          type: string
+          nullable: true
+        effectiveDays:
+          type: integer
+          format: int32
+        desc1:
+          type: string
+          nullable: true
+        desc2:
+          type: string
+          nullable: true
+        desc3:
+          type: string
+          nullable: true
+        account:
+          $ref: '#/components/schemas/Vendor_acctId'
+        accountType:
+          type: integer
+          format: int32
+          nullable: true
+        offsetAccount:
+          type: string
+          nullable: true
+        offsetCorr:
+          type: string
+          nullable: true
+        offsetAccountType:
+          type: integer
+          format: int32
+          nullable: true
+        secType:
+          type: string
+          nullable: true
+        secId:
+          type: string
+          nullable: true
+        secIdType:
+          type: string
+          nullable: true
+        secDescription:
+          type: string
+          nullable: true
+        tradeDate:
+          type: string
+          format: date
+          nullable: true
+        settleDate:
+          type: string
+          format: date
+          nullable: true
+        asofDate:
+          type: string
+          format: date
+          nullable: true
+        convFactor:
+          type: number
+          format: double
+          nullable: true
+        qty:
+          type: number
+          format: double
+          nullable: true
+        amount:
+          type: number
+          format: double
+          nullable: true
+        price:
+          type: number
+          format: double
+          nullable: true
+        qtyOrig:
+          type: number
+          format: double
+          nullable: true
+        amountOrig:
+          type: number
+          format: double
+          nullable: true
+        qtyCurr:
+          type: number
+          format: double
+          nullable: true
+        amountCurr:
+          type: number
+          format: double
+          nullable: true
+        entryCode:
+          type: string
+          nullable: true
+        controlId:
+          type: string
+          nullable: true
+        openClose:
+          type: string
+          nullable: true
+        sideCode:
+          type: string
+          nullable: true
+        stateCode:
+          type: string
+          nullable: true
+        open_systemId:
+          type: integer
+          format: int64
+          nullable: true
+        who:
+          type: string
+          nullable: true
+        systemId:
+          type: integer
+          format: int64
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        processDate:
+          type: string
+          format: date
+          nullable: false
+      required:
+      - account
+      - processDate
+      description: Public field schema from the pinned vendor cash class, including
+        inherited fields. account and processDate are required by the API. Omitted
+        other fields use vendor constructor defaults; business code enums are not
+        published. Unknown fields may be ignored by the vendor parser. Do not use
+        the local Java model contract.
+    Vendor_acctId:
+      type: object
+      properties:
+        firmId:
+          type: integer
+          format: int32
+          nullable: false
+        accountId:
+          type: string
+          nullable: false
+          minLength: 1
+          pattern: \S
+        correspondent:
+          type: string
+          nullable: true
+        branch:
+          type: string
+          nullable: true
+        rep:
+          type: string
+          nullable: true
+      required:
+      - firmId
+      - accountId
+    Vendor_trade:
+      type: object
+      properties:
+        shortInd:
+          type: string
+          nullable: true
+        cxlrblInd:
+          type: string
+          nullable: true
+        liqInd:
+          type: string
+          nullable: true
+        avgPriceInd:
+          type: string
+          nullable: true
+        reInvestInd:
+          type: string
+          nullable: true
+        principal:
+          type: number
+          format: double
+          nullable: true
+        comm:
+          type: number
+          format: double
+          nullable: true
+        commscheduleId:
+          type: integer
+          format: int32
+        regFee:
+          type: number
+          format: double
+          nullable: true
+        regFeescheduleId:
+          type: integer
+          format: int32
+        transFee:
+          type: number
+          format: double
+          nullable: true
+        transFeescheduleId:
+          type: integer
+          format: int32
+        fee1:
+          type: number
+          format: double
+          nullable: true
+        fee1cheduleId:
+          type: integer
+          format: int32
+        fee2:
+          type: number
+          format: double
+          nullable: true
+        fee2cheduleId:
+          type: integer
+          format: int32
+        fee3:
+          type: number
+          format: double
+          nullable: true
+        fee3cheduleId:
+          type: integer
+          format: int32
+        postage:
+          type: number
+          format: double
+          nullable: true
+        postagecheduleId:
+          type: integer
+          format: int32
+        tax:
+          type: number
+          format: double
+          nullable: true
+        interest:
+          type: number
+          format: double
+          nullable: true
+        orig_systemId:
+          type: integer
+          format: int64
+          nullable: true
+        capacity:
+          type: string
+          nullable: true
+        solicited:
+          type: string
+          nullable: true
+        discretion:
+          type: string
+          nullable: true
+        syndicate:
+          type: string
+          nullable: true
+        qualifier:
+          type: string
+          nullable: true
+        specialCode:
+          type: string
+          nullable: true
+        execTime:
+          type: string
+          nullable: true
+        clearingBroker:
+          type: string
+          nullable: true
+        execBroker:
+          type: string
+          nullable: true
+        contraBroker:
+          type: string
+          nullable: true
+        trailer:
+          type: string
+          nullable: true
+        confirm_note:
+          type: string
+          nullable: true
+        exch_code:
+          type: string
+          nullable: true
+        exch_type:
+          type: string
+          nullable: true
+        orderId:
+          type: string
+          nullable: true
+        orderTime:
+          type: string
+          nullable: true
+        account:
+          $ref: '#/components/schemas/Vendor_acctId'
+        accountType:
+          type: integer
+          format: int32
+          nullable: true
+        offsetAccount:
+          type: string
+          nullable: true
+        offsetCorr:
+          type: string
+          nullable: true
+        offsetAccountType:
+          type: integer
+          format: int32
+          nullable: true
+        secType:
+          type: string
+          nullable: true
+        secId:
+          type: string
+          nullable: true
+        secIdType:
+          type: string
+          nullable: true
+        secDescription:
+          type: string
+          nullable: true
+        tradeDate:
+          type: string
+          format: date
+          nullable: true
+        settleDate:
+          type: string
+          format: date
+          nullable: true
+        asofDate:
+          type: string
+          format: date
+          nullable: true
+        convFactor:
+          type: number
+          format: double
+          nullable: true
+        qty:
+          type: number
+          format: double
+          nullable: true
+        amount:
+          type: number
+          format: double
+          nullable: true
+        price:
+          type: number
+          format: double
+          nullable: true
+        qtyOrig:
+          type: number
+          format: double
+          nullable: true
+        amountOrig:
+          type: number
+          format: double
+          nullable: true
+        qtyCurr:
+          type: number
+          format: double
+          nullable: true
+        amountCurr:
+          type: number
+          format: double
+          nullable: true
+        entryCode:
+          type: string
+          nullable: true
+        controlId:
+          type: string
+          nullable: true
+        openClose:
+          type: string
+          nullable: true
+        sideCode:
+          type: string
+          nullable: true
+        stateCode:
+          type: string
+          nullable: true
+        open_systemId:
+          type: integer
+          format: int64
+          nullable: true
+        who:
+          type: string
+          nullable: true
+        systemId:
+          type: integer
+          format: int64
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        processDate:
+          type: string
+          format: date
+          nullable: false
+      required:
+      - account
+      - processDate
+      description: Public field schema from the pinned vendor trade class, including
+        inherited fields. account and processDate are required by the API. Omitted
+        other fields use vendor constructor defaults; business code enums are not
+        published. Unknown fields may be ignored by the vendor parser. Do not use
+        the local Java model contract.
+    Vendor_stock:
+      type: object
+      properties:
+        location:
+          type: string
+          nullable: true
+        locType:
+          type: integer
+          format: int32
+        restricted:
+          type: boolean
+        posSystemId:
+          type: integer
+          format: int64
+          nullable: true
+        subSource:
+          type: string
+          nullable: true
+        desc1:
+          type: string
+          nullable: true
+        desc2:
+          type: string
+          nullable: true
+        desc3:
+          type: string
+          nullable: true
+        account:
+          $ref: '#/components/schemas/Vendor_acctId'
+        accountType:
+          type: integer
+          format: int32
+          nullable: true
+        offsetAccount:
+          type: string
+          nullable: true
+        offsetCorr:
+          type: string
+          nullable: true
+        offsetAccountType:
+          type: integer
+          format: int32
+          nullable: true
+        secType:
+          type: string
+          nullable: true
+        secId:
+          type: string
+          nullable: true
+        secIdType:
+          type: string
+          nullable: true
+        secDescription:
+          type: string
+          nullable: true
+        tradeDate:
+          type: string
+          format: date
+          nullable: true
+        settleDate:
+          type: string
+          format: date
+          nullable: true
+        asofDate:
+          type: string
+          format: date
+          nullable: true
+        convFactor:
+          type: number
+          format: double
+          nullable: true
+        qty:
+          type: number
+          format: double
+          nullable: true
+        amount:
+          type: number
+          format: double
+          nullable: true
+        price:
+          type: number
+          format: double
+          nullable: true
+        qtyOrig:
+          type: number
+          format: double
+          nullable: true
+        amountOrig:
+          type: number
+          format: double
+          nullable: true
+        qtyCurr:
+          type: number
+          format: double
+          nullable: true
+        amountCurr:
+          type: number
+          format: double
+          nullable: true
+        entryCode:
+          type: string
+          nullable: true
+        controlId:
+          type: string
+          nullable: true
+        openClose:
+          type: string
+          nullable: true
+        sideCode:
+          type: string
+          nullable: true
+        stateCode:
+          type: string
+          nullable: true
+        open_systemId:
+          type: integer
+          format: int64
+          nullable: true
+        who:
+          type: string
+          nullable: true
+        systemId:
+          type: integer
+          format: int64
+          nullable: true
+        currency:
+          type: string
+          nullable: true
+        processDate:
+          type: string
+          format: date
+          nullable: false
+      required:
+      - account
+      - processDate
+      description: Public field schema from the pinned vendor stock class, including
+        inherited fields. account and processDate are required by the API. Omitted
+        other fields use vendor constructor defaults; business code enums are not
+        published. Unknown fields may be ignored by the vendor parser. Do not use
+        the local Java model contract.
+    Vendor_demoAsset:
+      type: object
+      properties:
+        account:
+          $ref: '#/components/schemas/Vendor_acctId'
+        balances:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vendor_bal0'
+        positions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vendor_pos0'
+        actsum:
+          $ref: '#/components/schemas/Vendor_actsum0'
+        tradesum:
+          $ref: '#/components/schemas/Vendor_tradesum0'
+        cashes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vendor_cash0'
+        trades:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vendor_trade0'
+        stocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vendor_stock0'
+        stkrecs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vendor_rck0'
+        taxlots:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vendor_taxlot0'
+        blotters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vendor_blotter0'
+        margin:
+          $ref: '#/components/schemas/Vendor_margin0'
+        processDate:
+          type: string
+          format: date
+          nullable: true
+    Vendor_bal0:
+      type: object
+      properties:
+        accountType:
+          type: integer
+          format: int32
+          nullable: true
+        balance:
+          type: number
+          format: double
+          nullable: true
+        longMV:
+          type: number
+          format: double
+          nullable: true
+        shortMV:
+          type: number
+          format: double
+          nullable: true
+        balanceSD:
+          type: number
+          format: double
+          nullable: true
+        balanceEffective:
+          type: number
+          format: double
+          nullable: true
+        longMVSD:
+          type: number
+          format: double
+          nullable: true
+        shortMVSD:
+          type: number
+          format: double
+          nullable: true
+        sma:
+          type: number
+          format: double
+          nullable: true
+        smaCash:
+          type: number
+          format: double
+          nullable: true
+        smaTrade:
+          type: number
+          format: double
+          nullable: true
+        smaStock:
+          type: number
+          format: double
+          nullable: true
+        mmf:
+          type: number
+          format: double
+          nullable: true
+        cshCount:
+          type: integer
+          format: int32
+          nullable: true
+        trdCount:
+          type: integer
+          format: int32
+          nullable: true
+        stkCount:
+          type: integer
+          format: int32
+          nullable: true
+    Vendor_pos0:
+      type: object
+      properties:
+        accountType:
+          type: integer
+          format: int32
+          nullable: true
+        tradeDate:
+          type: string
+          format: date
+          nullable: true
+        settleDate:
+          type: string
+          format: date
+          nullable: true
+        secType:
+          type: string
+          nullable: true
+        secId:
+          type: string
+          nullable: true
+        tdQty:
+          type: number
+          format: double
+          nullable: true
+        price:
+          type: number
+          format: double
+          nullable: true
+        amount:
+          type: number
+          format: double
+          nullable: true
+        origQty:
+          type: number
+          format: double
+          nullable: true
+        initAmount:
+          type: number
+          format: double
+          nullable: true
+        sdQty:
+          type: number
+          format: double
+          nullable: true
+        unitCost:
+          type: number
+          format: double
+          nullable: true
+        marketPrice:
+          type: number
+          format: double
+          nullable: true
+        marketValue:
+          type: number
+          format: double
+          nullable: true
+        prevClosePrice:
+          type: number
+          format: double
+          nullable: true
+        avgQty:
+          type: number
+          format: double
+          nullable: true
+        avgPrice:
+          type: number
+          format: double
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        openClose:
+          type: string
+          nullable: true
+        avgPriceInd:
+          type: string
+          nullable: true
+        reInvestInd:
+          type: string
+          nullable: true
+        segQty:
+          type: number
+          format: double
+          nullable: true
+        qualifier:
+          type: string
+          nullable: true
+        proceeds:
+          type: number
+          format: double
+          nullable: true
+        unsettledAmount:
+          type: number
+          format: double
+          nullable: true
+        realized:
+          type: number
+          format: double
+          nullable: true
+        unRealized:
+          type: number
+          format: double
+          nullable: true
+        unRealizedMTM:
+          type: number
+          format: double
+          nullable: true
+        lastSettleDate:
+          type: string
+          format: date
+          nullable: true
+    Vendor_actsum0:
+      type: object
+      properties:
+        cshAct:
+          type: integer
+          format: int32
+        trdAct:
+          type: integer
+          format: int32
+        stkAct:
+          type: integer
+          format: int32
+        cashBal:
+          type: number
+          format: double
+          nullable: true
+        cashMV:
+          type: number
+          format: double
+          nullable: true
+        marginBal:
+          type: number
+          format: double
+          nullable: true
+        marginLMV:
+          type: number
+          format: double
+          nullable: true
+        marginSMV:
+          type: number
+          format: double
+          nullable: true
+        marginEq:
+          type: number
+          format: double
+          nullable: true
+        totalEquity:
+          type: number
+          format: double
+          nullable: true
+        marginSecT1:
+          type: number
+          format: double
+          nullable: true
+        cashAvailT1:
+          type: number
+          format: double
+          nullable: true
+        mmktBal:
+          type: number
+          format: double
+          nullable: true
+        creditAmount:
+          type: number
+          format: double
+          nullable: true
+        debitAmount:
+          type: number
+          format: double
+          nullable: true
+        checkAmount:
+          type: number
+          format: double
+          nullable: true
+        achAmount:
+          type: number
+          format: double
+          nullable: true
+        wireAmount:
+          type: number
+          format: double
+          nullable: true
+        intAmount:
+          type: number
+          format: double
+          nullable: true
+        divAmount:
+          type: number
+          format: double
+          nullable: true
+    Vendor_tradesum0:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          format: int32
+        totalCXLCount:
+          type: integer
+          format: int32
+        totalRBLCount:
+          type: integer
+          format: int32
+        totalSymbolsCount:
+          type: integer
+          format: int32
+        totalBuyQty:
+          type: number
+          format: double
+          nullable: true
+        totalSellQty:
+          type: number
+          format: double
+          nullable: true
+        totalBuyAmount:
+          type: number
+          format: double
+          nullable: true
+        totalSellAmount:
+          type: number
+          format: double
+          nullable: true
+        totalComm:
+          type: number
+          format: double
+          nullable: true
+        totalRegFee:
+          type: number
+          format: double
+          nullable: true
+        totalTransFee:
+          type: number
+          format: double
+          nullable: true
+        totalFee1:
+          type: number
+          format: double
+          nullable: true
+        totalFee2:
+          type: number
+          format: double
+          nullable: true
+        totalFee3:
+          type: number
+          format: double
+          nullable: true
+        totalPostage:
+          type: number
+          format: double
+          nullable: true
+        totalTax:
+          type: number
+          format: double
+          nullable: true
+        totalInterest:
+          type: number
+          format: double
+          nullable: true
+    Vendor_cash0:
+      type: object
+      properties:
+        accountType:
+          type: integer
+          format: int32
+          nullable: true
+        tradeDate:
+          type: string
+          format: date
+          nullable: true
+        settleDate:
+          type: string
+          format: date
+          nullable: true
+        amount:
+          type: number
+          format: double
+          nullable: true
+        entryCode:
+          type: string
+          nullable: true
+        controlId:
+          type: string
+          nullable: true
+        subSource:
+          type: string
+          nullable: true
+        recType:
+          type: string
+          nullable: true
+        desc1:
+          type: string
+          nullable: true
+        desc2:
+          type: string
+          nullable: true
+        desc3:
+          type: string
+          nullable: true
+    Vendor_trade0:
+      type: object
+      properties:
+        accountType:
+          type: integer
+          format: int32
+          nullable: true
+        tradeDate:
+          type: string
+          format: date
+          nullable: true
+        settleDate:
+          type: string
+          format: date
+          nullable: true
+        secType:
+          type: string
+          nullable: true
+        secId:
+          type: string
+          nullable: true
+        qty:
+          type: number
+          format: double
+          nullable: true
+        price:
+          type: number
+          format: double
+          nullable: true
+        amount:
+          type: number
+          format: double
+          nullable: true
+        controlId:
+          type: string
+          nullable: true
+        shortInd:
+          type: string
+          nullable: true
+        cxlrblInd:
+          type: string
+          nullable: true
+        liqInd:
+          type: string
+          nullable: true
+        avgPriceInd:
+          type: string
+          nullable: true
+        reInvestInd:
+          type: string
+          nullable: true
+        comm:
+          type: number
+          format: double
+          nullable: true
+        regFee:
+          type: number
+          format: double
+          nullable: true
+        transFee:
+          type: number
+          format: double
+          nullable: true
+        fee1:
+          type: number
+          format: double
+          nullable: true
+        fee2:
+          type: number
+          format: double
+          nullable: true
+        fee3:
+          type: number
+          format: double
+          nullable: true
+        postage:
+          type: number
+          format: double
+          nullable: true
+        tax:
+          type: number
+          format: double
+          nullable: true
+        interest:
+          type: number
+          format: double
+          nullable: true
+        execTime:
+          type: string
+          nullable: true
+        clearingBroker:
+          type: string
+          nullable: true
+        execBroker:
+          type: string
+          nullable: true
+        contraBroker:
+          type: string
+          nullable: true
+        trailer:
+          type: string
+          nullable: true
+        confirm_note:
+          type: string
+          nullable: true
+        exch_code:
+          type: string
+          nullable: true
+        exch_type:
+          type: string
+          nullable: true
+        orderId:
+          type: string
+          nullable: true
+        orderTime:
+          type: string
+          nullable: true
+    Vendor_stock0:
+      type: object
+      properties:
+        accountType:
+          type: integer
+          format: int32
+          nullable: true
+        tradeDate:
+          type: string
+          format: date
+          nullable: true
+        settleDate:
+          type: string
+          format: date
+          nullable: true
+        secType:
+          type: string
+          nullable: true
+        secId:
+          type: string
+          nullable: true
+        qty:
+          type: number
+          format: double
+          nullable: true
+        price:
+          type: number
+          format: double
+          nullable: true
+        amount:
+          type: number
+          format: double
+          nullable: true
+        entryCode:
+          type: string
+          nullable: true
+        controlId:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        locType:
+          type: integer
+          format: int32
+        restricted:
+          type: boolean
+        desc1:
+          type: string
+          nullable: true
+        desc2:
+          type: string
+          nullable: true
+        desc3:
+          type: string
+          nullable: true
+    Vendor_rck0:
+      type: object
+      properties:
+        secType:
+          type: string
+          nullable: true
+        secId:
+          type: string
+          nullable: true
+        settleDate:
+          type: string
+          format: date
+          nullable: true
+        source:
+          type: string
+          nullable: true
+        sdQtyCash:
+          type: number
+          format: double
+          nullable: true
+        sdCostCash:
+          type: number
+          format: double
+          nullable: true
+        sdQtyMargin:
+          type: number
+          format: double
+          nullable: true
+        sdCostMargin:
+          type: number
+          format: double
+          nullable: true
+        sdQtyShort:
+          type: number
+          format: double
+          nullable: true
+        sdCostShort:
+          type: number
+          format: double
+          nullable: true
+        marketPrice:
+          type: number
+          format: double
+          nullable: true
+        avgQty:
+          type: number
+          format: double
+          nullable: true
+        avgPrice:
+          type: number
+          format: double
+          nullable: true
+        loc1:
+          type: string
+          nullable: true
+        loc1Date:
+          type: string
+          format: date
+          nullable: true
+        loc1Qty:
+          type: number
+          format: double
+          nullable: true
+        loc2:
+          type: string
+          nullable: true
+        loc2Date:
+          type: string
+          format: date
+          nullable: true
+        loc2Qty:
+          type: number
+          format: double
+          nullable: true
+        loc3:
+          type: string
+          nullable: true
+        loc3Date:
+          type: string
+          format: date
+          nullable: true
+        loc3Qty:
+          type: number
+          format: double
+          nullable: true
+        loc4:
+          type: string
+          nullable: true
+        loc4Date:
+          type: string
+          format: date
+          nullable: true
+        loc4Qty:
+          type: number
+          format: double
+          nullable: true
+        loc5:
+          type: string
+          nullable: true
+        loc5Date:
+          type: string
+          format: date
+          nullable: true
+        loc5Qty:
+          type: number
+          format: double
+          nullable: true
+        loc6:
+          type: string
+          nullable: true
+        loc6Date:
+          type: string
+          format: date
+          nullable: true
+        loc6Qty:
+          type: number
+          format: double
+          nullable: true
+        loc7:
+          type: string
+          nullable: true
+        loc7Date:
+          type: string
+          format: date
+          nullable: true
+        loc7Qty:
+          type: number
+          format: double
+          nullable: true
+        loc8:
+          type: string
+          nullable: true
+        loc8Date:
+          type: string
+          format: date
+          nullable: true
+        loc8Qty:
+          type: number
+          format: double
+          nullable: true
+    Vendor_taxlot0:
+      type: object
+      properties:
+        qty:
+          type: number
+          format: double
+          nullable: true
+        price:
+          type: number
+          format: double
+          nullable: true
+        openClose:
+          type: string
+          nullable: true
+        sideCode:
+          type: string
+          nullable: true
+        secType:
+          type: string
+          nullable: true
+        secId:
+          type: string
+          nullable: true
+        tradeDate:
+          type: string
+          format: date
+          nullable: true
+        settleDate:
+          type: string
+          format: date
+          nullable: true
+        open_lot_date:
+          type: string
+          format: date
+          nullable: true
+        open_orderId:
+          type: string
+          nullable: true
+        open_orderTime:
+          type: string
+          nullable: true
+        openCostAmount:
+          type: number
+          format: double
+          nullable: true
+        openPrice:
+          type: number
+          format: double
+          nullable: true
+        openMarketValue:
+          type: number
+          format: double
+          nullable: true
+        close_lot_date:
+          type: string
+          format: date
+          nullable: true
+        close_orderId:
+          type: string
+          nullable: true
+        close_orderTime:
+          type: string
+          nullable: true
+        closeCostAmount:
+          type: number
+          format: double
+          nullable: true
+        closePrice:
+          type: number
+          format: double
+          nullable: true
+        closeSource:
+          type: string
+          nullable: true
+        taxlotOrder:
+          type: string
+          nullable: true
+        closePLTerm:
+          type: string
+          nullable: true
+        unrealized:
+          type: number
+          format: double
+          nullable: true
+        realized:
+          type: number
+          format: double
+          nullable: true
+    Vendor_blotter0:
+      type: object
+      properties:
+        secType:
+          type: string
+          nullable: true
+        secId:
+          type: string
+          nullable: true
+        subCount:
+          type: integer
+          format: int32
+        subCXLCount:
+          type: integer
+          format: int32
+        subRBLCount:
+          type: integer
+          format: int32
+        subBuyQty:
+          type: number
+          format: double
+          nullable: true
+        subSellQty:
+          type: number
+          format: double
+          nullable: true
+        subBuyAmount:
+          type: number
+          format: double
+          nullable: true
+        subSellAmount:
+          type: number
+          format: double
+          nullable: true
+        subComm:
+          type: number
+          format: double
+          nullable: true
+        subRegFee:
+          type: number
+          format: double
+          nullable: true
+        subTransFee:
+          type: number
+          format: double
+          nullable: true
+        subFee1:
+          type: number
+          format: double
+          nullable: true
+        subFee2:
+          type: number
+          format: double
+          nullable: true
+        subFee3:
+          type: number
+          format: double
+          nullable: true
+        subPostage:
+          type: number
+          format: double
+          nullable: true
+        subOpenPos:
+          type: number
+          format: double
+          nullable: true
+        subCurrPos:
+          type: number
+          format: double
+          nullable: true
+        subRealized:
+          type: number
+          format: double
+          nullable: true
+        subUnRealized:
+          type: number
+          format: double
+          nullable: true
+        initRealized:
+          type: number
+          format: double
+          nullable: true
+        initUnRealized:
+          type: number
+          format: double
+          nullable: true
+    Vendor_margin0:
+      type: object
+      properties:
+        init_requirement:
+          type: number
+          format: double
+          nullable: true
+        maint_requirement:
+          type: number
+          format: double
+          nullable: true
+        house_requirement:
+          type: number
+          format: double
+          nullable: true
+        init_call:
+          type: number
+          format: double
+          nullable: true
+        maint_call:
+          type: number
+          format: double
+          nullable: true
+        house_call:
+          type: number
+          format: double
+          nullable: true
+        margin_equity:
+          type: number
+          format: double
+          nullable: true
+        total_equity:
+          type: number
+          format: double
+          nullable: true
+        maint_excess:
+          type: number
+          format: double
+          nullable: true
+        house_excess:
+          type: number
+          format: double
+          nullable: true
+        margin_Excess:
+          type: number
+          format: double
+          nullable: true
+        margin_percent:
+          type: number
+          format: double
+          nullable: true
+        sma:
+          type: number
+          format: double
+          nullable: true
+        smaPrev:
+          type: number
+          format: double
+          nullable: true
+        ovBPLevel:
+          type: number
+          format: double
+          nullable: true
+        dtBPLevel:
+          type: number
+          format: double
+          nullable: true
+        ovBP:
+          type: number
+          format: double
+          nullable: true
+        dtBP:
+          type: number
+          format: double
+          nullable: true
+        cashAvail:
+          type: number
+          format: double
+          nullable: true
+        maxDTmaint:
+          type: number
+          format: double
+          nullable: true
+        DTmaint:
+          type: number
+          format: double
+          nullable: true
+        DTviolation:
+          type: number
+          format: double
+          nullable: true
+        roundtrip:
+          type: integer
+          format: int32
+  responses:
+    AccountResponse:
+      description: Account including current nullable fields
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Account'
+    LegacyAsset:
+      description: Vendor demoAsset JSON from outDemoJson(), including arrays of balances,
+        positions and transactions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Vendor_demoAsset'
+    BadRequest:
+      description: Invalid request parameters/body or financial transaction rejected
+        by the vendor engine
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or incorrect HTTP Basic credentials
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            example: Basic realm="regulus"
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated caller lacks API role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Account or account book not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Duplicate account, database constraint violation, or financial
+        processDate earlier than the latest book
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UnsupportedMediaType:
+      description: Request must use Content-Type application/json
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServerError:
+      description: Unexpected database or engine error; internal details are not exposed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
